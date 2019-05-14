@@ -26,8 +26,8 @@
 
     # always loaded
     'data': [
-        'data/quotation_view.xml',
-        'data/imis_odoo_product_map_view.xml'
+        'views/quotation_view.xml',
+        'views/imis_odoo_product_map_view.xml'
     ],
     # only loaded in demonstration mode
     #'demo': [
