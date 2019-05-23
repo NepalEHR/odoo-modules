@@ -21,6 +21,7 @@
         <field name="arch" type="xml">
             <field name="amount_total" position="after">
                 <field name="payment_type"/>
+                <field name="claimable_amount" sum="Total Claimable amount"/>
             </field>
         </field>
 	</record>
@@ -36,5 +37,6 @@
             </xpath>
         </field>
 	</record>
+
 
 </odoo>
