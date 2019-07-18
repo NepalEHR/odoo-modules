@@ -16,28 +16,31 @@ class AtomEventWorker(models.Model):
         _logger.info(vals)
         category = vals.get("category")
 #         patient_ref = vals.get("ref")
-        if(category == "create.customer"):
-            self._create_or_update_customer(vals)
-        if category == "create.drug":
-            self.env['drug.service.create']._create_or_update_drug(vals)
-        if(category == "create.sale.order"):
-            self.env['order.save.service'].create_orders(vals)
-        if (category == 'create.drug.category'):
-            self.env['drug.service.create']._create_or_update_drug_category(vals)
-        if (category == 'create.drug.uom'):
-            self.env['product.uom.service']._create_or_update_uom(vals)
-        if (category == 'create.drug.uom.category'):
-            self.env['product.uom.service']._create_or_update_uom_category(vals)
-        if(category == "create.radiology.test"):
-            self.env['drug.service.create']._create_or_update_service(vals, 'Radiology')
-        if(category == "create.lab.test"):
-            self.env['drug.service.create']._create_or_update_service(vals, 'Test')
-        if(category == "create.lab.panel"):
-            self.env['drug.service.create']._create_or_update_service(vals, 'Panel')
+        try:
+            if category == "create.customer":
+                self._create_or_update_customer(vals)
+            elif category == "create.drug":
+                self.env['drug.data.service'].create_or_update_drug(vals)
+            elif category == "create.sale.order":
+                self.env['order.save.service'].create_orders(vals)
+            elif category == 'create.drug.category':
+                self.env['drug.data.service'].create_or_update_drug_category(vals)
+            elif category == 'create.drug.uom':
+                self.env['product.uom.service'].create_or_update_product_uom(vals)
+            elif category == 'create.drug.uom.category':
+                self.env['product.uom.service'].create_or_update_product_uom_category(vals)
+            elif category == "create.radiology.test":
+                self.env['reference.data.service'].create_or_update_ref_data(vals, 'Radiology')
+            elif category == "create.lab.test":
+                self.env['reference.data.service'].create_or_update_ref_data(vals, 'Test')
+            elif category == "create.lab.panel":
+                self.env['reference.data.service'].create_or_update_ref_data(vals, 'Panel')
 
-        self._create_or_update_marker(vals)
-        return {'success': True}
-    
+            return {'success': True}    
+        except Exception as err:
+            _logger.info("\n Processing event threw error: %s", err)
+            raise
+
     @api.model
     def _update_marker(self,  feed_uri_for_last_read_entry, last_read_entry_id, marker_ids):
         for marker_id in marker_ids:
@@ -56,7 +59,7 @@ class AtomEventWorker(models.Model):
     def _create_or_update_marker(self, vals):
         '''Method to Create or Update entries for markers table for the event taking place'''
         is_failed_event = vals.get('is_failed_event',False)
-        if(is_failed_event):
+        if is_failed_event:
             return
 
         last_read_entry_id = vals.get('last_read_entry_id')
@@ -110,13 +113,13 @@ class AtomEventWorker(models.Model):
                 state = self.env['res.country.state'].create({'name': address['stateProvince'],
                                                               'country_id': country.id})
             res.update({'state_id': state.id})
-        # TO FIX: for now, district is getting passed with country key from bahmni side.
-        if address.get('country'):
-            district = self.env['state.district'].search([('name', '=ilike', address['country'])])
+        if address.get('countyDistrict'):
+            district = self.env['state.district'].search([('name', '=ilike', address['countyDistrict'])])
             if not district:
-                district = self.env['state.district'].create({'name': address['country'],
+                district = self.env['state.district'].create({'name': address['countyDistrict'],
                                                               'state_id': state.id if state else state,
                                                               'country_id': country.id})
+            res.update({'district_id' : district.id})
         # for now, from bahmni side, Taluka is sent as address3
         if address.get('address3'):
             # =ilike operator will ignore the case of letters while comparing
@@ -126,7 +129,7 @@ class AtomEventWorker(models.Model):
                                                              'district_id': district.id if district else False,
                                                              'state_id': state.id if state else False})
             res.update({'tehsil_id': tehsil.id})
-	return res
+        return res
 
     def _get_customer_vals(self, vals):
         res = {}
@@ -146,10 +149,14 @@ class AtomEventWorker(models.Model):
         
     def _create_or_update_person_attributes(self, cust_id, vals):#TODO whole method
         attributes = json.loads(vals.get("attributes", "{}"))
+        openmrs_patient_attributes = str(self.env.ref('bahmni_atom_feed.openmrs_patient_attributes').value)
+        openmrs_attributes_list = filter(lambda s: len(s) > 0, map(str.strip, openmrs_patient_attributes.split(',')))
+        _logger.info("\n List of Patient Attributes to Sync = %s", openmrs_attributes_list)
         for key in attributes:
-            column_dict = {'partner_id': cust_id}
-            existing_attribute = self.env['res.partner.attributes'].search([('partner_id' , '=', cust_id),('name', '=', key)])
-            if any(existing_attribute):
-                existing_attribute.unlink()
-            column_dict.update({"name": key, "value" : attributes[key]})
-            self.env['res.partner.attributes'].create(column_dict)
+            if key in openmrs_attributes_list:
+                column_dict = {'partner_id': cust_id}
+                existing_attribute = self.env['res.partner.attributes'].search([('partner_id', '=', cust_id),('name', '=', key)])
+                if any(existing_attribute):
+                    existing_attribute.unlink()
+                column_dict.update({"name": key, "value" : attributes[key]})
+                self.env['res.partner.attributes'].create(column_dict)

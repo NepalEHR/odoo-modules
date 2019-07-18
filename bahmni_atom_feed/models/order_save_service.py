@@ -16,76 +16,83 @@ class OrderSaveService(models.Model):
     _auto = False
 
     def _get_openerp_orders(self, vals):
-        if(not vals.get("orders", None)):
+        if not vals.get("orders", None):
             return None
         orders_string = vals.get("orders")
         order_group = json.loads(orders_string)
         return order_group.get('openERPOrders', None)
     
     @api.model
-    def _get_warehouse_id(self, location, orderType):
-        _logger.info("!!!!!!!ORDER TYPE!!!!!!!!!")
-        _logger.info(orderType)
+    def _get_warehouse_id(self, location, order_type_ref):
+        _logger.info("\n identifying warehouse for warehouse %s, location %s", order_type_ref, location)
         if location:
-            order_type = self.env['order.type'].search([('name', '=', orderType)])
-            if not order_type:
-		order_type = self.env['order.type'].create({'name':orderType})
             operation_types = self.env['stock.picking.type'].search([('default_location_src_id', '=', location.id)])
-            if order_type and operation_types:
-                mapping = self.env['order.picking.type.mapping'].search([('order_type_id', '=', order_type.id),
+            if operation_types:
+                mapping = self.env['order.picking.type.mapping'].search([('order_type_id', '=', order_type_ref.id),
                                                                          ('picking_type_id', 'in', operation_types.ids)],
                                                                         limit=1)
                 if mapping:
-                    warehouse = mapping.picking_type_id.warehouse_id
-            elif not order_type and operation_types:
-                operation_type = self.env['stock.picking.type'].search([('default_location_src_id', '=', location.id)],
-                                                                        limit=1)
-                warehouse = operation_type.warehouse_id
+                    return mapping.picking_type_id.warehouse_id
+                else:
+                    return operation_types[0].warehouse_id
+
             else:
                 # either location should exist as stock location of a warehouse.
                 warehouse = self.env['stock.warehouse'].search([('lot_stock_id', '=', location.id)])
-                if not warehouse:
-                    _logger.warning("Location is neither mapped to warehouse nor to any Operation type, hence sale order creation failed!")
-                    return
-                else:
+                if warehouse:
                     return warehouse.id
+                else:
+                    _logger.warning("Location is neither mapped to warehouse nor to any Operation type, "
+                                    "hence sale order creation failed!")
+                    # TODO: the above message seems to indicate that we should fail sale order creation,
+                    #  but create_orders() seem to behave otherwise.
+                    return
         else:
             _logger.warning("Location with name '%s' does not exists in the system")
 
        
     @api.model 
-    def _get_shop_and_local_shop_id(self, orderType, location_name):
-        _logger.info("\n\n _get_shop_and_local_shop_id().... Called.....")
+    def _get_shop_and_location_id(self, orderType, location_name, order_type_record):
+        _logger.info("\n _get_shop_and_location_id().... Called.....")
         _logger.info("orderType %s",orderType)
-        _logger.info("location_name %s",location_name)
+        _logger.info("location_name %s", location_name)
         OrderTypeShopMap = self.env['order.type.shop.map']
         SaleShop = self.env['sale.shop']
-        if (location_name):
-            order_type_rocord = self.env['order.type'].search([('name','=',orderType)])
-            _logger.info("\n\n*****order_type_rocord=%s",order_type_rocord)			
-            shop_list_with_orderType = OrderTypeShopMap.search([('order_type', '=', order_type_rocord.id), ('location_name', '=', location_name)])
-            _logger.info("shop_list_with_orderType %s",shop_list_with_orderType)
-            if not shop_list_with_orderType:
-                shop_list_with_orderType = OrderTypeShopMap.search([('order_type', '=', order_type_rocord.id), ('location_name', '=', 	None)])
-                _logger.info(" if not shop_list_with_orderType %s",shop_list_with_orderType)
-                if not shop_list_with_orderType:
-                    return (False, False)
-            _logger.info("Final.....shop_list_with_orderType %s", shop_list_with_orderType)
-            order_type_map_object = shop_list_with_orderType[0]
-            if order_type_map_object.shop_id:
-                shop_id = order_type_map_object.shop_id.id
-            else:
-                shop_records = SaleShop.search([])
-                first_shop = shop_records[0]
-                shop_id = first_shop.id
+        shop_list_with_order_type = None
+        if location_name:
+            shop_list_with_order_type = OrderTypeShopMap.search(
+                [('order_type', '=', order_type_record.id), ('location_name', '=', location_name)])
+            _logger.info("\nFor specified order location name [%s], shop_list_with_orderType : %s",
+                         location_name, shop_list_with_order_type)
+        
+        if not shop_list_with_order_type:
+            _logger.info("\nCouldn't identify OrderType-Shop mapping for specified order location name [%s], "
+                         "searching for default OrderType-Shop map", location_name)
+            shop_list_with_order_type = OrderTypeShopMap.search(
+                [('order_type', '=', order_type_record.id), ('location_name', '=', None)])
+            _logger.info("\nOrderType-Shop mappings without order location name specified: %s",
+                         shop_list_with_order_type)
 
-            if order_type_map_object.local_shop_id:
-                local_shop_id = order_type_map_object.local_shop_id.id
-            else:
-                local_shop_id = False
-            return (shop_id, local_shop_id)
-        return (False, False)
+        if not shop_list_with_order_type:
+            _logger.info("\nCouldn't identify OrderType-Shop mapping for Order Type [%s]", orderType)
+            return False, False
 
+        order_shop_map_object = shop_list_with_order_type[0]
+        _logger.info("Identified Order Shop mapping %s", order_shop_map_object)    
+        if order_shop_map_object.shop_id:
+            shop_id = order_shop_map_object.shop_id.id
+        else:
+            shop_records = SaleShop.search([])
+            first_shop = shop_records[0]
+            shop_id = first_shop.id
+
+        if order_shop_map_object.location_id:
+            location_id = order_shop_map_object.location_id.id
+        else:
+            location_id = SaleShop.search([('id','=',shop_id)]).location_id.id
+
+        _logger.info("\n__get_shop_and_location_id() returning shop_id: %s, location_id: %s", shop_id, location_id)
+        return shop_id, location_id
 
 
     @api.model
@@ -94,26 +101,35 @@ class OrderSaveService(models.Model):
         location_name = vals.get("locationName")
         all_orders = self._get_openerp_orders(vals)
 
-        if(not all_orders):
+        if not all_orders:
             return ""
 
         customer_ids = self.env['res.partner'].search([('ref', '=', customer_id)])
-        if(customer_ids):
+        if customer_ids:
             cus_id = customer_ids[0]
 
             for orderType, ordersGroup in groupby(all_orders, lambda order: order.get('type')):
 
+                order_type_def = self.env['order.type'].search([('name','=',orderType)])
+                if (not order_type_def):
+                    _logger.info("\nOrder Type is not defined. Ignoring %s for Customer %s",orderType,cus_id)
+                    continue
+
                 orders = list(ordersGroup)
                 care_setting = orders[0].get('visitType').lower()
                 provider_name = orders[0].get('providerName')
-                # will return order line data for products which exists in the system, either with productID passed or with conceptName
+                # will return order line data for products which exists in the system, either with productID passed
+                # or with conceptName
                 unprocessed_orders = self._filter_processed_orders(orders)
-                tup = self._get_shop_and_local_shop_id(orderType, location_name)
+                tup = self._get_shop_and_location_id(orderType, location_name, order_type_def)
                 shop_id = tup[0]
-                local_shop_id = tup[1]
+                location_id = tup[1]
 
                 if (not shop_id):
-                    continue
+                    err_message = "Can not process order. Order type:{} - should be matched to a shop".format(orderType)
+                    _logger.info(err_message)
+                    raise Warning(err_message)
+                    
                 # instead of shop_id, warehouse_id is needed.
                 # in case of odoo 10, warehouse_id is required for creating order, not shop
                 # with each stock_picking_type, a warehouse id is linked.
@@ -123,26 +139,17 @@ class OrderSaveService(models.Model):
                 # will search for picking type whose source location is same as passed location, and it's linked warehouse will get passed to the order.
                 # else will look for warehouse, whose stock location is as per the location name
                 # without warehouse id, order cannot be created
-                location = self.env['stock.location'].search([('name', '=', location_name)], limit=1)
-                if not location:
-                   location = self.env['stock.location'].create({'name':location_name})
-                if not location:
-                    _logger.warning("No location found with name: %s"%(location_name))
-                warehouse_id = self._get_warehouse_id(location, orderType)
-                if not warehouse_id:
-                    #self.env['stock.warehouse'].create({'name':,'code':})
-                    operation_type = self.env['stock.picking.type'].search([('name', '=', 'Delivery Orders')],
-                                                                        limit=1)
-                    warehouse_id = operation_type.warehouse_id.id
-                _logger.info("!!!!!!!!!!!!!!!WAREHOUSE!!!!!!!!!!!!!!!!!!!!!")
-                _logger.info(warehouse_id)
+                
+                shop_obj = self.env['sale.shop'].search([('id','=',shop_id)])
+                warehouse_id = shop_obj.warehouse_id.id
+                _logger.warning("warehouse_id: %s"%(warehouse_id))
 
                 name = self.env['ir.sequence'].next_by_code('sale.order')
                 #Adding both the ids to the unprocessed array of orders, Separating to dispensed and non-dispensed orders
                 unprocessed_dispensed_order = []
                 unprocessed_non_dispensed_order = []
                 for unprocessed_order in unprocessed_orders:
-                    unprocessed_order['location_id'] = location.id
+                    unprocessed_order['location_id'] = location_id
                     unprocessed_order['warehouse_id'] = warehouse_id
                     if(unprocessed_order.get('dispensed', 'false') == 'true'):
                         unprocessed_dispensed_order.append(unprocessed_order)
@@ -168,12 +175,16 @@ class OrderSaveService(models.Model):
                                            'provider_name': provider_name,
                                            'date_order': datetime.strftime(datetime.now(), DTF),
                                            'pricelist_id': cus_id.property_product_pricelist and cus_id.property_product_pricelist.id or False,
+                                           'payment_term_id': shop_obj.payment_default_id.id,
+                                           'project_id': shop_obj.project_id.id if shop_obj.project_id else False,
                                            'picking_policy': 'direct',
                                            'state': 'draft',
                                            'dispensed': dispensed,
                                            'shop_id' : shop_id,
                                            'origin' : 'ATOMFEED SYNC',
                                            }
+                        if shop_obj.pricelist_id:
+                            sale_order_vals.update({'pricelist_id': shop_obj.pricelist_id.id})
                         sale_order = self.env['sale.order'].create(sale_order_vals)
                         for rec in unprocessed_non_dispensed_order:
                             self._process_orders(sale_order, unprocessed_non_dispensed_order, rec)
@@ -229,13 +240,16 @@ class OrderSaveService(models.Model):
                                            'provider_name': provider_name,
                                            'date_order': datetime.strftime(datetime.now(), DTF),
                                            'pricelist_id': cus_id.property_product_pricelist and cus_id.property_product_pricelist.id or False,
+                                           'payment_term_id': shop_obj.payment_default_id.id,
+                                           'project_id': shop_obj.project_id.id if shop_obj.project_id else False,
                                            'picking_policy': 'direct',
                                            'state': 'draft',
                                            'dispensed': dispensed,
                                            'shop_id' : shop_id,
                                            'origin' : 'ATOMFEED SYNC',
                                            }
-
+                        if shop_obj.pricelist_id:
+                            sale_order_vals.update({'pricelist_id': shop_obj.pricelist_id.id})
                         sale_order = self.env['sale.order'].create(sale_order_vals)
 
 
@@ -350,8 +364,8 @@ class OrderSaveService(models.Model):
 
             order['quantity'] = self._get_order_quantity(order, default_quantity_value)
             product_uom_qty = order['quantity']
-            if(prod_lot != None and order['quantity'] > prod_lot.future_stock_forecast):
-                product_uom_qty = prod_lot.future_stock_forecast
+            if(prod_lot != None and order['quantity'] > prod_lot.stock_forecast):
+                product_uom_qty = prod_lot.stock_forecast
 
             sale_order_line = {
                 'product_id': prod_id,
@@ -370,15 +384,30 @@ class OrderSaveService(models.Model):
 
             if prod_lot != None:
                 life_date = prod_lot.life_date and datetime.strptime(prod_lot.life_date, DTF)
-                sale_order_line['price_unit'] = prod_lot.sale_price if prod_lot.sale_price > 0.0 else sale_order_line['price_unit']
+                if self.env.ref('bahmni_sale.sale_price_basedon_cost_price_markup').value == '1':
+                    sale_order_line['price_unit'] = prod_lot.sale_price if prod_lot.sale_price > 0.0 else sale_order_line['price_unit']
                 sale_order_line['batch_name'] = prod_lot.name
                 sale_order_line['batch_id'] = prod_lot.id
-                sale_order_line['expiry_date'] = life_date and life_date.strftime('%d/%m/%Y')
+                sale_order_line['expiry_date'] = life_date and life_date.strftime(DTF)
+            
+            
+            sale_obj = self.env['sale.order'].browse(sale_order)
+            sale_line = sale_order_line_obj.create(sale_order_line)
+            
+            sale_line._compute_tax_id()
+            if sale_obj.pricelist_id:
+                line_product = prod_obj.with_context(
+                    lang = sale_obj.partner_id.lang,
+                    partner = sale_obj.partner_id.id,
+                    quantity = sale_line.product_uom_qty,
+                    date = sale_obj.date_order,
+                    pricelist = sale_obj.pricelist_id.id,
+                    uom = prod_obj.uom_id.id
+                )
+                price = self.env['account.tax']._fix_tax_included_price_company(sale_line._get_display_price(prod_obj), prod_obj.taxes_id, sale_line.tax_id, sale_line.company_id)
+                sale_line.price_unit = price
 
-            sale_order_line_obj.create(sale_order_line)
-
-            sale_order = self.env['sale.order'].browse(sale_order)
-
+            
             if product_uom_qty != order['quantity']:
                 order['quantity'] = order['quantity'] - product_uom_qty
                 self._create_sale_order_line_function(sale_order, order)
@@ -391,14 +420,9 @@ class OrderSaveService(models.Model):
     @api.model
     def _filter_processed_orders(self, orders):
         unprocessed_orders = []
-        dispensed_status = False
-
         for order in orders:
-            if order.get('dispensed') == 'true':
-                dispensed_status = True
-            else:
-                dispensed_status = False
-            if (not self._order_already_processed(order['orderId'], dispensed_status)):
+            dispensed_status = order.get('dispensed') == 'true'
+            if not self._order_already_processed(order['orderId'], dispensed_status):
                 unprocessed_orders.append(order)
         return self._filter_products_undefined(unprocessed_orders)
 

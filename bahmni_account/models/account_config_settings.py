@@ -11,3 +11,5 @@ class AccountConfigSettings(models.TransientModel):
     def set_round_off_by_defaults(self):
         return self.env['ir.values'].sudo().set_default(
             'account.config.settings', 'round_off_by', self.round_off_by)
+            
+

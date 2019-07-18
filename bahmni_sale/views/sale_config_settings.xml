@@ -20,6 +20,20 @@
                     
                 </div>
 <!--                <field name="auto_convert_dispensed" widget="radio"/-->
+                <label string="Delivery"/>
+                <div name="validate_delivery_feature">
+                    <field name="validate_picking" class="oe_inline" />
+                    <label for="validate_picking"/>
+                    <br/>
+                    <field name="allow_negative_stock" class="oe_inline" />
+                    <label for="allow_negative_stock"/>
+                    <br/>
+                </div>
+                <label string="Markup"/>
+                <div name="sale_price_markup_feature">
+                    <field name="sale_price_markup" class="oe_inline" />
+                    <label for="sale_price_markup"/>
+                </div>
 			</xpath>
 		</field>
 	</record>
