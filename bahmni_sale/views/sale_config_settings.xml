@@ -17,7 +17,10 @@
                     <br/>
                     <field name="convert_dispensed" class="oe_inline" />
                     <label for="convert_dispensed"/>
-                    
+                    <br/>
+                    <field name="auto_invoice_dispensed" class="oe_inline" />
+                    <label for="auto_invoice_dispensed"/>
+
                 </div>
 <!--                <field name="auto_convert_dispensed" widget="radio"/-->
                 <label string="Delivery"/>
@@ -33,6 +36,11 @@
                 <div name="sale_price_markup_feature">
                     <field name="sale_price_markup" class="oe_inline" />
                     <label for="sale_price_markup"/>
+                </div>
+                <label string="Customer Address"/>
+                <div name="auto_create_customer_address_levels_feature">
+                    <field name="auto_create_customer_address_levels" class="oe_inline" />
+                    <label for="auto_create_customer_address_levels"/>
                 </div>
 			</xpath>
 		</field>

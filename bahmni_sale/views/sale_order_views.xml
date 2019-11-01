@@ -11,15 +11,12 @@
 				<field name="care_setting" />
 				<field name="provider_name"/>
 			</xpath>
-			<xpath expr="//field[@name='client_order_ref']" position="after">
-				<field name="dispensed" invisible="1"/>
-			</xpath>
-                        <xpath expr="//field[@name='partner_id']" position="after">
+			<xpath expr="//field[@name='partner_id']" position="after">
 				<field name="partner_uuid" invisible="1"/>
 			</xpath>
-                        <xpath expr="//field[@name='payment_term_id']" position="after">
-                                <field name="shop_id"/>
-                        </xpath>
+			<xpath expr="//field[@name='payment_term_id']" position="after">
+				<field name="shop_id"/>
+			</xpath>
 			<xpath expr="//notebook/page[1]/group" position="replace">
 				<div class="col-xs-5 pull-right text-right" style="padding-right:0px">
 					<div class="col-xs-6 footer_label" style="min-height: 28px;">
@@ -125,6 +122,22 @@
 				<field name="lot_id" domain="[('product_id', '=', product_id)]"/>
 				<field name="expiry_date" readonly="1"/>
 			</xpath>
+			<xpath expr="//field[@name='order_line']/tree/field[@name='product_id']" position="replace">
+				<field name="product_id" 
+				       context="{'partner_id':parent.partner_id, 'quantity':product_uom_qty, 'pricelist':parent.pricelist_id, 'uom':product_uom, 'company_id': parent.company_id}"/><!--attrs="{'readonly': ['|', ('qty_invoiced', '&gt;', 0), ('procurement_ids', '!=', [])]}"-->
+			</xpath>
+			<xpath expr="//field[@name='order_line']/tree/field[@name='qty_delivered']" position="replace">
+			    <field name="qty_delivered" invisible="context.get('hide_sale')"/>
+                                        <!--attrs="{'readonly': [('qty_delivered_updateable', '=', False)]}"/-->
+            </xpath>
+            <xpath expr="//field[@name='order_line']/tree/field[@name='price_unit']" position="replace">
+                <field name="price_unit"/>
+                                        <!--attrs="{'readonly': [('qty_invoiced', '&gt;', 0)]}"/-->
+            </xpath>
+            <xpath expr="//field[@name='order_line']/tree/field[@name='tax_id']" position="replace">
+                                    <field name="tax_id" widget="many2many_tags" domain="[('type_tax_use','=','sale'),('company_id','=',parent.company_id)]"/>
+                                        <!--attrs="{'readonly': [('qty_invoiced', '&gt;', 0)]}"/-->
+            </xpath>
 		</field>
 	</record>
 	
