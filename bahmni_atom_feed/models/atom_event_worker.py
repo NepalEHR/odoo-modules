@@ -40,6 +40,8 @@ class AtomEventWorker(models.Model):
                 self.env['reference.data.service'].create_or_update_ref_data(vals, 'Panel')
             elif category == "create.service.saleable":
                 self.env['reference.data.service'].create_or_update_ref_data(vals, 'Others')
+            elif category == "update.attributes":
+                self.env['order.save.service'].create_orders(vals)]
 
             return {'success': True}    
         except Exception as err:
